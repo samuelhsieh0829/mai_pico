@@ -1,4 +1,6 @@
 build
+build-*
+tests/build-*
 pico-examples
 pico-sdk
 .vscode

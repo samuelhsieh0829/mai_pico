@@ -91,15 +91,15 @@ Before we start, I want to encourage you with some hobbyist builds.
   <img src="doc/solder_usb_txrx.jpg" width="60%">
 * 1x USB Type-C socket (918-418K2023S40001 or KH-TYPE-C-16P)
 * 2x 0603 5.1kohm resistors (R20, R21) for USB. If you plan to use the native USB socket on the Pi Pico directly, then the Type-C socket and resistors can be omitted, making the soldering much simpler.
-* 3x MPR121 modules, there're many types in the market, choose ones like this.  
+* 4x MPR121 modules, there're many types in the market, choose ones like this.
   https://www.sparkfun.com/products/retired/9695  
   Before solder MP121 module to the main PCB board, remember to use a knife to **cut (unshort) the tiny trace that connects ADDR to the GND**. Please be careful not to cut more than necessary.  
   <img src="doc/mpr121_cut.png" width="40%">
-* Leave U5, U6, U7 area discrete components empty as we're using MPR121 module, not the chip. Please note that these components are removed in the newer version board.
+* Leave U5, U6, U7 area discrete components empty as we're using MPR121 module, not the chip. Please note that these components are removed in the newer version board. The fourth module is wired externally to the same GPIO 6/7 I2C bus, so the existing PCB does not need to be changed. Connect its `ADDR` to `SCL` to select address `0x5D`; the four firmware addresses are `0x5A`, `0x5B`, `0x5C` and `0x5D`.
 * 1x SN74LV1T34DBVR (SOT-23-5) level shifter (U8), if you can't find one, just use a 0603 10ohm resistor (R4) as an alternative. In newer version board, it's removed.  
   https://www.lcsc.com/product-detail/Buffer-Driver-Transceiver_Texas-Instruments-SN74LV1T34DBVR_C100024.html
 * 4x 0603 1uF (0.1~1uF all fine) capacitors (C1, C2, C3, C7), OPTIONAL, recommended. Please note that some are removed in the newer version board.
-* 16x WS2812B-3528 RGB LEDs (each button needs two).
+* 32x WS2812B-3528 RGB LEDs for the eight outer buttons (four serial LEDs per button).
 * 8x Kailh Choc v1 key switches, linear, 30gf to 45gf ones.  
   https://www.kailhswitch.com/mechanical-keyboard-switches/low-profile-key-switches/burnt-orange-switch.html
 * 1x PN532 NFC module and some thin wires, only needed if you want AIME.  
@@ -177,12 +177,35 @@ Before we start, I want to encourage you with some hobbyist builds.
 * Daisy chained RGB LED numbers for each button can be assigned using `rgb` command.
 * LED brightness can be adjusted by `level` command.
 * There are MPR121 parameter tuning and sensitive settings, explore them yourself.
-* It implements 3 COM ports, one is for command line and the other two are for LED and Touch. By issuing `whoami` to the command line, each COM port will print their identities.
+* It implements 4 COM ports for Command Line, Touch, LED and AIME. By issuing `whoami` to the command line, the first three ports print their identities.
 * Button signal is sent to the host by HID Joystick or HID NKRO (keyboard). There're two set of NKRO keymaps, use `hid <joy|key1|key2>` to switch between them. In NKRO mode, key mappings are:
   * key1: `WEDCXZAQ`-Ring Buttons, `3`-Select
   * key2 (Numpad): `89632147`-Ring Buttons, `*`-Select
   * Above two sets both have: `F1`-Test `F2`-Service `F3`-Coin
 * `factory` to reset to default. When there's a firmware update, the old configuration may become corrupted, you can reset configuration, then re-plug the controller.
+
+### Four-MPR121 live monitor and Web configurator
+
+The firmware now exposes 48 physical electrodes and maps exactly 34 of them to the Mai zones; the other 14 are `XX`. The configurator uses the correct physical layout: alternating `D/A` zones around the outside, `E1`–`E8` between the rings, `B1`–`B8` inside, and `C2/C1` in the centre.
+
+1. Build and flash the CFG/1 firmware, then connect all four MPR121 modules on the same I2C bus. The fourth module must use `ADDR → SCL` (`0x5D`).
+2. From `configurator`, run `npm install` and `npm run dev`, then open the shown localhost URL in Chrome or Edge. Web Serial is intentionally filtered to VID `0x0CA3`, PID `0x0021`; choose the **Command Line Port**.
+3. The home page shows all 34 touch zones and 12 buttons at 25 Hz. Touch zones show the diagnostic `delta / active threshold`. Game input uses the MPR121's coherent, debounced touch state: it presses at the Press threshold and remains held until it passes the lower Release threshold. This live mode does not pause normal HID, AIME, lighting, or game I/O.
+4. Use **Mapping settings** to edit each zone's MPR/ID and thresholds plus each button's GPIO and active level. **Save all** writes one validated transaction to Flash and reads it back. JSON import loads a reviewable draft; JSON export saves a `mai-pico-hardware-profile` backup.
+
+Closing the port, unplugging USB, aborting, or rebooting before commit discards RAM staging. Only the short save transaction pauses game input; live monitoring leaves it running.
+
+### Building firmware and running tests
+
+Install the Raspberry Pi Pico SDK, an Arm GNU embedded toolchain, CMake and the SDK's normal build prerequisites. Then initialise the AIC submodule and build:
+
+```text
+git submodule update --init --recursive
+cmake -S firmware -B firmware/build -DPICO_SDK_PATH=<path-to-pico-sdk>
+cmake --build firmware/build
+```
+
+The desktop configurator is checked with `npm test` and `npm run build` inside `configurator`. SDK-independent firmware mapping/MPR121 tests live in `firmware/tests` and can be run with CMake plus a host C compiler.
 
 ## CAD Source File
 I'm using OnShape free subscription. It's powerful but it can't archive original designs to local, so I can only share the link here. STL/DXF/DWG files are exported from this online document.  

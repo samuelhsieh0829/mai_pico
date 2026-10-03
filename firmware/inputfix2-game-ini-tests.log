@@ -1,0 +1,10 @@
+Verified change: DummyTouchPanel=1 -> 0 in C:\Users\samuel\AppData\Local\Temp\tmp01b9_wl9\mai2.ini; no files written
+Applied and verified: DummyTouchPanel=0 in C:\Users\samuel\AppData\Local\Temp\tmp01b9_wl9\mai2.ini
+Backup: C:\Users\samuel\AppData\Local\Temp\tmp01b9_wl9\mai2.ini.before-inputfix2-20260905-095247-39555191.bak
+Exit the game normally and restart before testing. No process was stopped.
+Already configured: DummyTouchPanel=0 in C:\Users\samuel\AppData\Local\Temp\tmp01b9_wl9\mai2.ini
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.016s
+
+OK

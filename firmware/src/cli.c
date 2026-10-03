@@ -122,7 +122,7 @@ static void process_cmd()
 
     char *cmd = strtok(cmd_buf, " \n");
 
-    if (strlen(cmd) == 0) {
+    if (cmd == NULL || cmd[0] == '\0') {
         return;
     }
 

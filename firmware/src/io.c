@@ -2,6 +2,11 @@
 #include <stdbool.h>
 
 #include "io.h"
+#include "config.h"
+#include "cfg_protocol.h"
+#include "pico/time.h"
+#include <string.h>
+#include <stdio.h>
 #include "tusb.h"
 #include "usb_descriptors.h"
 
@@ -233,19 +238,19 @@ static void led_cmd(cdc_t *cdc)
             break;
         case 0x31:
             color = rgb32(cdc->led.r, cdc->led.g, cdc->led.b, false);
-            DEBUG(led, "LED %d:1 %06lx\n", cdc->led.index, color);
+            DEBUG(led, "LED %d:1 %06lx\n", cdc->led.index, (unsigned long)color);
             rgb_set_button(cdc->led.index, color, 0);          
             break;
         case 0x32:
             color = rgb32(cdc->led.mr, cdc->led.mg, cdc->led.mb, false);
-            DEBUG(led, "LED %d:%d %06lx\n", cdc->led.start, cdc->led.len, color);
+            DEBUG(led, "LED %d:%d %06lx\n", cdc->led.start, cdc->led.len, (unsigned long)color);
             for (int i = 0; i < cdc->led.len; i++) {
                 rgb_set_button(i + cdc->led.start, color, 0);
             }
             break;
         case 0x33:
             color = rgb32(cdc->led.mr, cdc->led.mg, cdc->led.mb, false);
-            DEBUG(led, "LED %d:%d %06lx %d\n", cdc->led.start, cdc->led.len, color, cdc->led.speed);
+            DEBUG(led, "LED %d:%d %06lx %d\n", cdc->led.start, cdc->led.len, (unsigned long)color, cdc->led.speed);
             for (int i = 0; i < cdc->led.len; i++) {
                 rgb_set_button(i + cdc->led.start, color, cdc->led.speed);
             }
@@ -341,41 +346,109 @@ static void update_itf(cdc_t *cdc)
     if (tud_cdc_n_available(cdc->interface)) {
         uint8_t buf[48];
         uint32_t count = tud_cdc_n_read(cdc->interface, buf, sizeof(buf));
-        for (int i = 0; i < count; i++) {
+        for (uint32_t i = 0; i < count; i++) {
             assemble_cmd(cdc, buf[i]);
         }
     }
 }
 
-static void send_touch()
+static bool touch_release_pending;
+static uint8_t touch_tx[9];
+static unsigned touch_tx_offset;
+static bool touch_tx_pending, touch_tx_release;
+static int touch_tx_interface;
+static uint64_t last_sent_time;
+static io_touch_diagnostics_t tx_diagnostics;
+static unsigned release_reason, tx_release_reason;
+enum { RELEASE_USB_RESET = 1, RELEASE_SUSPEND = 2 };
+const io_touch_diagnostics_t *io_touch_diagnostics(void) { return &tx_diagnostics; }
+
+void io_usb_reset(void)
 {
-    if ((ctx.touch_interface == 0) | (!ctx.stat)) {
+    tx_diagnostics.usb_resets++;
+    tx_diagnostics.valid = false;
+    release_reason = RELEASE_USB_RESET;
+    touch_tx_pending = false;
+    touch_tx_offset = 0;
+    touch_release_pending = true;
+    last_sent_time = 0;
+    ctx.stat = false;
+    ctx.touch_interface = 0;
+    ctx.last_io_time = 0;
+    cdc[0] = (cdc_t){.interface = 1};
+    cdc[1] = (cdc_t){.interface = 2};
+}
+
+void io_flush_touch(void)
+{
+    if (!tud_ready()) {
+        /* USB reset discards the transport FIFO; never resume half a frame. */
+        tx_diagnostics.valid = false;
+        release_reason = RELEASE_USB_RESET;
+        touch_tx_pending = false;
+        touch_tx_offset = 0;
+        touch_release_pending = true;
         return;
     }
-
-    static uint64_t last_sent_time = 0;
     uint64_t now = time_us_64();
-    if (now - last_sent_time < 1000) {
-        return;
+    if (!touch_tx_pending) {
+        if (!ctx.touch_interface) return;
+        if (!touch_release_pending && (!ctx.stat || cfg_is_active() || now - last_sent_time < 1000)) return;
+        if (tud_cdc_n_write_available(ctx.touch_interface) < sizeof(touch_tx)) return;
+        touch_tx[0] = '(';
+        touch_tx[8] = ')';
+        uint64_t touch = touch_release_pending ? 0 : touch_touchmap();
+        for (unsigned i = 1; i < 8; i++) {
+            touch_tx[i] = touch & 0x1f;
+            touch >>= 5;
+        }
+        touch_tx_release = touch_release_pending;
+        tx_release_reason = release_reason;
+        touch_tx_interface = ctx.touch_interface;
+        touch_tx_offset = 0;
+        touch_tx_pending = true;
     }
-    last_sent_time = now;
-
-
-    uint8_t report[9] = "(\0\0\0\0\0\0\0)";
-    uint64_t touch = touch_touchmap();
-    for (int i = 0; i < 7; i++) {
-        report[i + 1] = touch & 0x1f;
-        touch >>= 5;
+    unsigned remaining = sizeof(touch_tx) - touch_tx_offset;
+    if (tud_cdc_n_write_available(touch_tx_interface) < remaining) return;
+    unsigned written = tud_cdc_n_write(touch_tx_interface, touch_tx + touch_tx_offset, remaining);
+    if (written > remaining) written = remaining;
+    touch_tx_offset += written;
+    tud_cdc_n_write_flush(touch_tx_interface);
+    if (touch_tx_offset == sizeof(touch_tx)) {
+        /* Count only complete packets accepted by TinyUSB, not attempted writes. */
+        uint64_t accepted = 0;
+        for (unsigned i = 0; i < 7; i++) accepted |= (uint64_t)(touch_tx[i + 1] & 0x1f) << (5 * i);
+        input_history_update(&tx_diagnostics.history, accepted);
+        tx_diagnostics.packets++;
+        tx_diagnostics.valid = true;
+        tx_diagnostics.last_packet_us = now;
+        tx_diagnostics.last_interface = touch_tx_interface;
+        if (touch_tx_release) {
+            if (tx_release_reason == RELEASE_SUSPEND) tx_diagnostics.suspend_neutral_packets++;
+            if (tx_release_reason == RELEASE_USB_RESET) tx_diagnostics.reset_neutral_packets++;
+        }
+        last_sent_time = now;
+        touch_tx_pending = false;
+        if (touch_tx_release) touch_release_pending = false;
     }
-    tud_cdc_n_write(ctx.touch_interface, report, sizeof(report));
-    tud_cdc_n_write_flush(ctx.touch_interface);
 }
 
 void io_update()
 {
+    /* Finish an unexpected short write before any response can share its stream. */
+    if (touch_tx_pending) {
+        io_flush_touch();
+        if (touch_tx_pending) return;
+    }
     update_itf(cdc);
     update_itf(cdc + 1);
-    send_touch();
+}
+
+void io_suspend()
+{
+    tx_diagnostics.suspend_requests++;
+    release_reason = RELEASE_SUSPEND;
+    touch_release_pending = true;
 }
 
 bool io_is_active()

@@ -7,6 +7,8 @@
 #define HID_H_
 
 void hid_update();
+void hid_usb_reset(void);
+void hid_release_all();
 void hid_proc(const uint8_t *buffer, uint8_t len);
 
 #endif

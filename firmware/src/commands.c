@@ -15,6 +15,7 @@
 #include "config.h"
 #include "save.h"
 #include "cli.h"
+#include "cfg_protocol.h"
 
 #include "aime.h"
 #include "nfc.h"
@@ -91,15 +92,26 @@ static void disp_gpio()
 static void disp_touch()
 {
     printf("[Touch]\n");
+    printf("  Detection: coherent MPR121 status with debounce and press/release hysteresis\n");
     printf("     ADDR|_0|_1|_2|_3|_4|_5|_6|_7|_8|_9|10|11|\n");
 
-    for (int m = 0; m < 3; m++) {
+    for (int m = 0; m < MAI_TOUCH_SENSOR_COUNT; m++) {
         printf("  %d: 0x%02x|", m, MPR121_BASE_ADDR + m);
-        for (int chn = 0; chn < 12; chn++) {
-            int key = touch_key_from_channel(m * 12 + chn);
+        for (int chn = 0; chn < MAI_TOUCH_CHANNELS_PER_SENSOR; chn++) {
+            int key = touch_key_from_channel(
+                m * MAI_TOUCH_CHANNELS_PER_SENSOR + chn);
             printf("%2s|", touch_key_name(key));
         }
         printf("\n");
+    }
+
+    printf("  Effective MPR121 thresholds:\n");
+    printf("  Zone | Press when delta >= | Release when delta <\n");
+    for (int zone = 0; zone < MAI_TOUCH_ZONE_COUNT; zone++) {
+        printf("   %2s  |        %3u          |         %3u\n",
+               touch_key_name(zone),
+               (unsigned)touch_press_threshold(zone),
+               (unsigned)touch_release_threshold(zone));
     }
 }
 
@@ -159,7 +171,7 @@ void handle_display(int argc, char *argv[])
 static void handle_rgb(int argc, char *argv[])
 {
     const char *usage = "Usage: rgb <per_button> <per_cab> <per_banner>\n"
-                        "  per_button: [0..15] LED number per button\n"
+                        "  per_button: [0..16] LED number per button\n"
                         "  per_cab: [0..15] LED number for each cabinet light\n"
                         "  per_banner: [0..15] LED number for the banner\n";
     if (argc != 3) {
@@ -172,7 +184,7 @@ static void handle_rgb(int argc, char *argv[])
     int per_banner = cli_extract_non_neg_int(argv[2], 0);
 
     if ((per_button < 0) || (per_cab < 0) || (per_banner < 0) ||
-        (per_button > 15) || (per_cab > 15) || (per_banner > 15)) {
+        (per_button > 16) || (per_cab > 15) || (per_banner > 15)) {
         printf(usage);
         return;
     }
@@ -406,40 +418,41 @@ static void handle_debounce(int argc, char *argv[])
     disp_sense();
 }
 
-static void print_readings(const char *title, const uint16_t *readings, int num)
-{
-    printf(" %s |", title);
-    for (int i = 0; i < num; i++) {
-        printf(" %4d |", readings[i]);
-    }
-    printf("\n");
-}
-
 static void handle_raw()
 {
-    const uint16_t *raw = touch_raw();
-    const uint16_t *zones = map_raw_to_zones(raw);
+    uint16_t filtered[MAI_TOUCH_CHANNEL_COUNT];
+    uint16_t baseline[MAI_TOUCH_CHANNEL_COUNT];
+    int16_t delta[MAI_TOUCH_CHANNEL_COUNT];
+    bool all_ok = touch_read_frame(filtered, baseline, delta);
 
-    printf("Touch raw readings:\n");
+    printf("Touch direct readings (delta = baseline - filtered):\n");
 
-    printf("   Sensor: 0: %s, 1: %s 2: %s\n",
+    printf("  Sensors: 0:%s 1:%s 2:%s 3:%s (%s)\n",
             touch_sensor_ok(0) ? "OK" : "ERR",
             touch_sensor_ok(1) ? "OK" : "ERR",
-            touch_sensor_ok(2) ? "OK" : "ERR");
-    
-    printf("   By Sensor:\n");
-    printf("   |___1__|___2__|___3__|___4__|___5__|___6__|___7__|___8__|___9__|__10__|__11__|__12__|\n");
-    print_readings("0", raw, 12);
-    print_readings("1", raw + 12, 12);
-    print_readings("2", raw + 24, 12);
-
-    printf("   By Zone:\n");
-    printf("   |___1__|___2__|___3__|___4__|___5__|___6__|___7__|___8__|\n");
-    print_readings("A", zones, 8);
-    print_readings("B", zones + 8, 8);
-    print_readings("C", zones + 16, 2);
-    print_readings("D", zones + 18, 8);
-    print_readings("E", zones + 26, 8);
+            touch_sensor_ok(2) ? "OK" : "ERR",
+            touch_sensor_ok(3) ? "OK" : "ERR",
+            all_ok ? "all online" : "read error");
+    printf("  Zone MPR:CH Filter Base Delta Press Release State Active\n");
+    for (int zone = 0; zone < MAI_TOUCH_ZONE_COUNT; zone++) {
+        int channel = touch_key_channel(zone);
+        if (channel < 0 || channel >= MAI_TOUCH_CHANNEL_COUNT) {
+            printf("   %2s    --     --    --    --    --      --  UNMAPPED\n",
+                   touch_key_name(zone));
+            continue;
+        }
+        bool pressed = touch_touched(zone);
+        unsigned press = touch_press_threshold(zone);
+        unsigned release = touch_release_threshold(zone);
+        unsigned active = pressed ? release : press;
+        printf("   %2s   %d:%02d   %4u  %4u %+5d   %3u     %3u  %-4s  %3u\n",
+               touch_key_name(zone),
+               channel / MAI_TOUCH_CHANNELS_PER_SENSOR,
+               channel % MAI_TOUCH_CHANNELS_PER_SENSOR,
+               (unsigned)filtered[channel], (unsigned)baseline[channel],
+               (int)delta[channel], press, release,
+               pressed ? "DOWN" : "UP", active);
+    }
 }
 
 static void handle_whoami()
@@ -461,7 +474,7 @@ static void handle_gpio(int argc, char *argv[])
     const char *usage = "Usage: gpio main <gpio1> <gpio2> ... <gpio8>\n"
                         "       gpio <test|service|navigate|coin> <gpio>\n"
                         "       gpio reset\n"
-                        "  gpio: 0..29\n";
+                        "  gpio: one of 0,1,2,3,4,5,8,9,10,11,12,14\n";
     if (argc == 1) {
         if (strcasecmp(argv[0], "reset") != 0) {
             printf(usage);
@@ -479,7 +492,7 @@ static void handle_gpio(int argc, char *argv[])
         uint8_t gpio_main[8];
         for (int i = 0; i < 8; i++) {
             int gpio = cli_extract_non_neg_int(argv[i + 1], 0);
-            if ((gpio < 0) || (gpio > 29)) {
+            if ((gpio < 0) || !button_gpio_allowed(gpio)) {
                 printf(usage);
                 return;
             }
@@ -495,7 +508,7 @@ static void handle_gpio(int argc, char *argv[])
         const uint8_t button_pos[] = {8, 9, 10, 11};
         int match = cli_match_prefix(choices, 4, argv[0]);
         uint8_t gpio = cli_extract_non_neg_int(argv[1], 0);
-        if ((match < 0) || (gpio > 29)) {
+        if ((match < 0) || !button_gpio_allowed(gpio)) {
             printf(usage);
             return;
         }
@@ -514,13 +527,17 @@ static void handle_gpio(int argc, char *argv[])
 static void detect_touch()
 {
     bool touched = false;
-    for (int i = 0; i < 34; i++) {
+    for (int i = 0; i < MAI_TOUCH_ZONE_COUNT; i++) {
         if (touch_touched(i)) {
             touched = true;
             printf("Touched: %s", touch_key_name(i));
-            uint8_t pad = touch_key_channel(i);
+            int pad = touch_key_channel(i);
             if (pad >= 0) {
-                printf(" (Sensor %d, Electrode %d)\n", pad / 12, pad % 12 + 1);
+                printf(" (Sensor %d, Electrode %d, press >= %u, release < %u)\n",
+                       pad / MAI_TOUCH_CHANNELS_PER_SENSOR,
+                       pad % MAI_TOUCH_CHANNELS_PER_SENSOR + 1,
+                       (unsigned)touch_press_threshold(i),
+                       (unsigned)touch_release_threshold(i));
             } else {
                 printf(" (nil)\n");
             }
@@ -543,19 +560,19 @@ static bool set_touch_map(int argc, char *argv[])
     int channel = cli_extract_non_neg_int(argv[1], 0);
     int key = touch_key_by_name(argv[2]);
 
-    if ((sensor < 0) || (sensor > 2) ||
-        (channel < 0) || (channel > 11) ||
+    if ((sensor < 0) || (sensor >= MAI_TOUCH_SENSOR_COUNT) ||
+        (channel < 0) || (channel >= MAI_TOUCH_CHANNELS_PER_SENSOR) ||
         (key < 0)) {
         return false;
     }
-    touch_set_map(sensor * 12 + channel, key);
+    touch_set_map(sensor * MAI_TOUCH_CHANNELS_PER_SENSOR + channel, key);
     return true;
 }
 
 static void handle_touch(int argc, char *argv[])
 {
     const char *usage = "Usage: touch [<sensor> <channel> <key>]\n"
-                        "  sensor: 0..2\n"
+                        "  sensor: 0..3\n"
                         " channel: 0..11\n"
                         "     key: A1, C2, E5, etc. XX means Not Connected.)\n";
     if (argc == 0) {
@@ -650,12 +667,14 @@ static void handle_tweak(int argc, char *argv[])
 
     bool active = on_off == 0 ? true : false;
     if (option == 0) {
-        mai_cfg->tweak.main_button_active_high = active;
+        config_button_group_active_high_set(mai_cfg, true, active);
     } else if (option == 1) {
-        mai_cfg->tweak.aux_button_active_high = active;
+        config_button_group_active_high_set(mai_cfg, false, active);
     }
 
     config_changed();
+    button_init();
+    mai_runtime.key_stuck = button_is_stuck();
     disp_tweak();
 }
 
@@ -669,7 +688,7 @@ void commands_init()
     cli_register("filter", handle_filter, "Set pre-filter config.");
     cli_register("sense", handle_sense, "Set sensitivity config.");
     cli_register("debounce", handle_debounce, "Set debounce config.");
-    cli_register("raw", handle_raw, "Show key raw readings.");
+    cli_register("raw", handle_raw, "Show direct delta readings and thresholds.");
     cli_register("whoami", handle_whoami, "Identify each com port.");
     cli_register("save", handle_save, "Save config to flash.");
     cli_register("gpio", handle_gpio, "Set GPIO pins for buttons.");
@@ -677,4 +696,5 @@ void commands_init()
     cli_register("tweak", handle_tweak, "Miscellaneous tweak options.");
     cli_register("factory", config_factory_reset, "Reset everything to default.");
     cli_register("aime", handle_aime, "AIME settings.");
+    cli_register("cfg", cfg_command, "Web configurator protocol (CFG/1).");
 }

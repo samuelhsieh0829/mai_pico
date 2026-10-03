@@ -93,16 +93,16 @@
 * 1x USB Type-C 插座（918-418K2023S40001 或 KH-TYPE-C-16P）
 * 2x 0603 5.1kohm 电阻（R20，R21）用于 USB，如果你打算直接使用 Pi Pico 上面原生的 USB 插座，那么 Type-C 插座和电阻都可以省去，焊接也会简单不少。
 
-* 3x MPR121 模块，市场上有许多类型，选择像这样的。
+* 4x MPR121 模块，市场上有许多类型，选择像这样的。
   https://www.sparkfun.com/products/retired/9695 
 
   在将 MP121 模块焊接到主 PCB 板之前，记得用小刀**切断 ADDR 和 GND 之间的微小连线**，注意绝对不要切过头。  
   <img src="doc/mpr121_cut.png" width="40%">
-* 因为我们使用的是 MPR121 模块，而不是芯片，所以 U5、U6、U7 区域的离散组件留空（新版里已经移除）。
+* 因为我们使用的是 MPR121 模块，而不是芯片，所以 U5、U6、U7 区域的离散组件留空（新版里已经移除）。第四颗模块外接到同一组 GPIO 6/7 I²C，总板不需要修改；把它的 `ADDR` 接到 `SCL`，地址就是 `0x5D`。韧体使用的四个地址是 `0x5A`、`0x5B`、`0x5C`、`0x5D`。
 * 1x SN74LV1T34DBVR（SOT-23-5）电平转换器（U8），如果你找不到，就用 0603 10ohm 电阻（R4）替代，新版的设计里，它已经被移除。
   https://www.lcsc.com/product-detail/Buffer-Driver-Transceiver_Texas-Instruments-SN74LV1T34DBVR_C100024.html
 * 4x 0603 1uF（0.1~1uF 都可以）电容器（C1，C2，C3，C7），可选，推荐。有些已经在新版本里移除。
-* 16x WS2812B-3528 RGB LED（每个按钮需要两个）。
+* 外框八颗按键共 32x WS2812B-3528 RGB LED（每颗按键四颗依序串接）。
 * 8x Kailh Choc v1 键盘开关，线性的，30gf 到 45gf 的。
   https://www.kailhswitch.com/mechanical-keyboard-switches/low-profile-key-switches/burnt-orange-switch.html
 * 1x PN532 NFC 模块和一些细电线, 只有需要 AIME 的时候才用得上.  
@@ -180,12 +180,35 @@
 * 可以使用 `rgb` 命令为每个按钮分配串联的 RGB LED 数量。
 * 可以通过 `level` 命令调整 LED 的亮度。
 * 有 MPR121 参数调整和灵敏度设置，自己探索。
-* 它实现了 3 个 COM 端口，一个用于命令行，另外两个用于 LED 和 Touch。通过向命令行发出 `whoami`，每个 COM 端口都会打印它们的身份。
+* 它实现了 4 个 COM 端口，分别用于 Command Line、Touch、LED 和 AIME。通过命令行发出 `whoami`，前三个端口会打印自己的身份。
 * 按钮信号通过 HID Joystick 或 HID NKRO（键盘）发送到主机。有两套 NKRO 键映射，使用 `hid <joy|key1|key2>` 在它们之间切换。在 NKRO 模式下，键映射是：
   * key1：`WEDCXZAQ`-按键环，`3`-Select
   * key2（小键盘）：`89632147`-按键环，`*`-Select
   * 上述两套都有：`F1`-Test `F2`-Service `F3`-投币
 * `factory` 用来复位到默认配置。当固件升级时，老配置可能失效，这时候请复位到默认配置，然后重新插拔一下控制器。
+
+### 四颗 MPR121 即时监看与 Web 配置器
+
+新版韧体提供 48 个实体电极，其中 34 个映射到 Mai 触控区，其余 14 个为 `XX`。网页里的位置依照实际面板：外圈为交错的 `D/A`、中间为 `E1–E8`、内圈为 `B1–B8`，中心左边 `C2`、右边 `C1`。
+
+1. 编译并刷入支持 CFG/1 的韧体，把四颗 MPR121 接在同一条 I²C 上；第四颗必须是 `ADDR → SCL`（`0x5D`）。
+2. 进入 `configurator` 执行 `npm install`、`npm run dev`，再用 Chrome 或 Edge 打开终端显示的 localhost 地址。Web Serial 会以 VID `0x0CA3`、PID `0x0021` 筛选装置，请选择 **Command Line Port**。
+3. 首页会以 25 Hz 显示 34 个触控区与 12 颗按键；触控区显示诊断用的「delta／当前门槛」。游戏输入使用 MPR121 内部同步且经过 debounce 的触控状态：达到按下门槛时触发，并维持按住直到通过较小的放开门槛。即时监看不会暂停 HID、AIME、灯光或游戏输入。
+4. 在「分配设定」里可修改各区的 MPR／ID、threshold，以及各按键的 GPIO 与 active level。「全部保存」会一次写入 Flash 并读回比对。JSON 汇入会先载入成可检查的草稿，汇出则保存 `mai-pico-hardware-profile` 备份。
+
+在提交前关闭序列埠、拔除 USB、取消或重开机，RAM staging 都会被放弃，不会留下半套设定。只有短暂的保存 transaction 会暂停游戏输入；即时监看期间输入会持续运作。
+
+### 编译韧体与测试
+
+先安装 Raspberry Pi Pico SDK、Arm GNU Embedded Toolchain、CMake 与 Pico SDK 的一般建置相依套件，然后初始化 AIC submodule：
+
+```text
+git submodule update --init --recursive
+cmake -S firmware -B firmware/build -DPICO_SDK_PATH=<pico-sdk-路径>
+cmake --build firmware/build
+```
+
+网页测试在 `configurator` 内执行 `npm test` 与 `npm run build`。不依赖 Pico SDK 的韧体映射及 MPR121 测试放在 `firmware/tests`，可使用 CMake 与主机 C 编译器执行。
 
 ## CAD 源文件
 我正在使用 OnShape 的免费订阅。它很强大，但不能将原始设计存档到本地，所以我只能在这里分享链接。STL/DXF/DWG 文件是从这个在线文档导出的。  

@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <memory.h>
+#include <inttypes.h>
 
 #include "pico/bootrom.h"
 #include "pico/stdio.h"
@@ -48,25 +49,33 @@ static uint64_t requesting_time = 0;
 
 static mutex_t *io_lock;
 
-static void save_program()
-{
-    old_data = new_data;
+static const page_t *get_page(int id);
 
-    data_page = (data_page + 1) % (FLASH_SECTOR_SIZE / FLASH_PAGE_SIZE);
-    printf("\nProgram Flash %d %8lx\n", data_page, old_data.magic);
+static bool save_program()
+{
+    page_t page = new_data;
+    int next_page = (data_page + 1) % (FLASH_SECTOR_SIZE / FLASH_PAGE_SIZE);
+    printf("\nProgram Flash %d %8" PRIx32 "\n", next_page, page.magic);
     if (mutex_enter_timeout_us(io_lock, 100000)) {
         sleep_ms(10); /* wait for all io operations to finish */
         uint32_t ints = save_and_disable_interrupts();
-        if (data_page == 0) {
+        if (next_page == 0) {
             flash_range_erase(SAVE_SECTOR_OFFSET, FLASH_SECTOR_SIZE);
         }
-        flash_range_program(SAVE_SECTOR_OFFSET + data_page * FLASH_PAGE_SIZE,
-                            (uint8_t *)&old_data, FLASH_PAGE_SIZE);
+        flash_range_program(SAVE_SECTOR_OFFSET + next_page * FLASH_PAGE_SIZE,
+                            (uint8_t *)&page, FLASH_PAGE_SIZE);
         restore_interrupts(ints);
         mutex_exit(io_lock);
+        if (memcmp(get_page(next_page), &page, sizeof(page)) == 0) {
+            data_page = next_page;
+            old_data = page;
+            return true;
+        }
+        printf("Program Flash Verify Failed.\n");
     } else {
         printf("Program Flash Failed.\n");
     }
+    return false;
 }
 
 static void load_default()
@@ -78,17 +87,17 @@ static void load_default()
 
 static const page_t *get_page(int id)
 {
-    int addr = XIP_BASE + SAVE_SECTOR_OFFSET;
-    return (page_t *)(addr + FLASH_PAGE_SIZE * id);
+    uintptr_t addr = XIP_BASE + SAVE_SECTOR_OFFSET;
+    return (const page_t *)(addr + FLASH_PAGE_SIZE * id);
 }
 
 static void save_load()
 {
-    for (int i = 0; i < FLASH_SECTOR_SIZE / FLASH_PAGE_SIZE; i++) {
+    for (unsigned i = 0; i < FLASH_SECTOR_SIZE / FLASH_PAGE_SIZE; i++) {
         if (get_page(i)->magic != my_magic) {
             break;
         }
-        data_page = i;
+        data_page = (int)i;
     }
 
     if (data_page < 0) {
@@ -99,7 +108,7 @@ static void save_load()
 
     old_data = *get_page(data_page);
     new_data = old_data;
-    printf("Page Loaded %d %8lx\n", data_page, new_data.magic);
+    printf("Page Loaded %d %8" PRIx32 "\n", data_page, new_data.magic);
 }
 
 static void save_loaded()
@@ -142,12 +151,17 @@ void save_init(uint32_t magic, mutex_t *locker)
 void save_loop()
 {
     if (requesting_save && (time_us_64() - requesting_time > SAVE_TIMEOUT_US)) {
-        requesting_save = false;
         /* only when data is actually changed */
         if (memcmp(&old_data, &new_data, sizeof(old_data)) == 0) {
+            requesting_save = false;
             return;
         }
-        save_program();
+        if (save_program()) {
+            requesting_save = false;
+        } else {
+            /* Keep the request dirty and retry after the normal delay. */
+            requesting_time = time_us_64();
+        }
     }
 }
 
@@ -162,7 +176,7 @@ void *save_alloc(size_t size, void *def, void (*after_load)())
     return new_data.data + offset;
 }
 
-void save_request(bool immediately)
+bool save_request(bool immediately)
 {
     if (!requesting_save) {
         printf("Save requested.\n");
@@ -171,7 +185,14 @@ void save_request(bool immediately)
         requesting_time = time_us_64();
     }
     if (immediately) {
-        requesting_time = 0;
-        save_loop();
+        if (memcmp(&old_data, &new_data, sizeof(old_data)) == 0) {
+            requesting_save = false;
+        } else if (save_program()) {
+            requesting_save = false;
+        } else {
+            requesting_time = time_us_64();
+        }
     }
+    return !requesting_save &&
+           memcmp(&old_data, &new_data, sizeof(old_data)) == 0;
 }

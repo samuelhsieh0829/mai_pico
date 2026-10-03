@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "board_defs.h"
 
@@ -9,6 +10,8 @@
 #include "rgb.h"
 #include "config.h"
 #include "hid.h"
+#include "cfg_protocol.h"
+#include "pico/time.h"
 
 struct __attribute__((packed)) {
     uint16_t adcs[8];
@@ -40,68 +43,79 @@ static uint16_t native_to_io4(uint16_t button)
     return io4btn;
 }
 
-static void gen_io4_report()
-{
-    static uint16_t last_buttons = 0;
-    uint16_t buttons = button_read();
-    hid_io4.buttons[0] = native_to_io4(buttons);
-    hid_io4.buttons[1] = native_to_io4(0);
-    if ((last_buttons ^ buttons) & (1 << 11)) {
-        if (buttons & (1 << 11)) {
-            // just pressed coin button
-            hid_io4.chutes[0] += 0x100;
-        }
-    }
-    last_buttons = buttons;
-}
-
 const char keymap_p1[] = BUTTON_NKRO_MAP_P1;
 const char keymap_p2[] = BUTTON_NKRO_MAP_P2;
+static bool release_pending[2];
+static bool was_ready, was_suspended;
+static uint32_t coin_origin;
+static uint64_t next_periodic_report;
 
-static void gen_nkro_report()
+static void gen_nkro_report(uint16_t buttons)
 {
-    uint16_t buttons = button_read();
     const char *keymap = (mai_cfg->hid.nkro == 2) ? keymap_p2 : keymap_p1;
+    memset(&hid_nkro, 0, sizeof(hid_nkro));
     for (int i = 0; i < button_num(); i++) {
         uint8_t code = keymap[i];
-        uint8_t byte = code / 8;
-        uint8_t bit = code % 8;
-        if (buttons & (1 << i)) {
-            hid_nkro.keymap[byte] |= (1 << bit);
-        } else {
-            hid_nkro.keymap[byte] &= ~(1 << bit);
+        if ((buttons & (1u << i)) && code / 8 < sizeof(hid_nkro.keymap)) {
+            hid_nkro.keymap[code / 8] |= 1u << (code % 8);
         }
     }
+}
+
+void hid_usb_reset(void)
+{
+    was_ready = false;
 }
 
 void hid_update()
 {
-    if (!tud_hid_ready()) {
-        return;
+    bool ready = tud_ready();
+    bool suspended = cfg_is_active();
+    if ((ready && !was_ready) || (!suspended && was_suspended)) {
+        button_events_resync(0);
+        button_events_resync(1);
     }
+    was_ready = ready;
+    was_suspended = suspended;
+    if (!ready) return;
 
-    if (mai_cfg->hid.io4) {
-        gen_io4_report();
-        static uint64_t next_periodic_report = 0;
-        uint64_t now = time_us_64();
-        /* Somehow edge-triggering doesn't pass self-test, so periodic report
-           is also there, with a lower rate that doesn't crowd the bus. */
-        if ((memcmp(&hid_io4, &sent_hid_io4, sizeof(hid_io4)) != 0) ||
-            (now > next_periodic_report)) {
-            next_periodic_report = now + 4000; // 250Hz periodic report
-            if (tud_hid_report(REPORT_ID_JOYSTICK, &hid_io4, sizeof(hid_io4))) {
-                sent_hid_io4 = hid_io4;
+    for (unsigned itf = 0; itf < 2; itf++) {
+        bool enabled = itf == 0 ? mai_cfg->hid.io4 : mai_cfg->hid.nkro;
+        if (!enabled || !tud_hid_n_ready(itf)) continue;
+        bool release = release_pending[itf];
+        if (!release && (suspended || (itf == 1 && mai_runtime.key_stuck))) continue;
+
+        button_event_t event;
+        bool queued = !release && button_event_peek(itf, &event);
+        if (itf == 0) {
+            if (release || queued) {
+                hid_io4.buttons[0] = native_to_io4(release ? 0 : event.buttons);
+                hid_io4.buttons[1] = native_to_io4(0);
+                if (queued) {
+                    int32_t coins = (int32_t)(event.coins - coin_origin);
+                    hid_io4.chutes[0] = coins > 0 ? (uint16_t)((uint32_t)coins << 8) : 0;
+                }
             }
-        }
-    }
-
-    if (mai_cfg->hid.nkro && !mai_runtime.key_stuck) {
-        gen_nkro_report();
-        if ((memcmp(&hid_nkro, &sent_hid_nkro, sizeof(hid_nkro)) != 0) &&
-            tud_hid_n_report(1, 0, &hid_nkro, sizeof(hid_nkro))) {
+            uint64_t now = time_us_64();
+            if (!release && !queued && now < next_periodic_report &&
+                memcmp(&hid_io4, &sent_hid_io4, sizeof(hid_io4)) == 0) continue;
+            if (!tud_hid_n_report(0, REPORT_ID_JOYSTICK, &hid_io4, sizeof(hid_io4))) continue;
+            sent_hid_io4 = hid_io4;
+            next_periodic_report = now + 4000;
+        } else {
+            if (!release && !queued) continue;
+            gen_nkro_report(release ? 0 : event.buttons);
+            if (!tud_hid_n_report(1, 0, &hid_nkro, sizeof(hid_nkro))) continue;
             sent_hid_nkro = hid_nkro;
         }
+        if (release) release_pending[itf] = false;
+        else if (queued) button_event_ack(itf, event.sequence);
     }
+}
+
+void hid_release_all()
+{
+    release_pending[0] = release_pending[1] = true;
 }
 
 typedef struct __attribute__((packed)) {
@@ -125,7 +139,8 @@ typedef struct __attribute__((packed)) {
 
 void hid_proc(const uint8_t *buffer, uint8_t len)
 {
-    hid_output_t *data = (hid_output_t *)buffer;
+    if (!buffer || len < 2) return;
+    const hid_output_t *data = (const hid_output_t *)buffer;
     if (data->report_id == REPORT_ID_OUTPUT) {
         switch (data->cmd) {
             case 0x01: // Set Timeout
@@ -133,6 +148,7 @@ void hid_proc(const uint8_t *buffer, uint8_t len)
                 hid_io4.system_status = 0x30;
                 break;
             case 0x03: // Clear Board Status
+                coin_origin = button_coin_count();
                 hid_io4.chutes[0] = 0;
                 hid_io4.chutes[1] = 0;
                 hid_io4.system_status = 0x00;
@@ -145,7 +161,7 @@ void hid_proc(const uint8_t *buffer, uint8_t len)
                 // Bit 15: Camera Ring
                 break;
             case 0x41: // RGB Light
-                if (data->led != 0xfc) {
+                if (len < 10 || data->led != 0xfc) {
                     break;
                 }
                 uint32_t p1_banner = rgb32(data->r1, data->g1, data->b1, false);

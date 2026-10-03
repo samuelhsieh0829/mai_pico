@@ -8,11 +8,13 @@
 #define I2C_PORT i2c1
 #define I2C_SDA 6
 #define I2C_SCL 7
-#define I2C_FREQ 400*1000
+/* Four MPR121 boards and panel wiring are not reliably clean at Fast Mode. */
+#define I2C_FREQ 100*1000
 
 #define RGB_PIN 13
 #define RGB_ORDER GRB // or RGB
-#define RGB_BUTTON_MAP { 5, 4, 3, 2, 1, 0, 7, 6 }
+/* Physical LED chain order: button 4 -> 3 -> 2 -> 1 -> 8 -> 7 -> 6 -> 5. */
+#define RGB_BUTTON_MAP { 3, 2, 1, 0, 7, 6, 5, 4 }
 
 /* 8 main buttons, Test, Service, Navigate, Coin */
 #define BUTTON_DEF { 1, 0, 4, 5, 8, 9, 3, 2, 12, 11, 10, 14 }

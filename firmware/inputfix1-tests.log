@@ -1,0 +1,181 @@
+Start testing: Sep 05 15:47 台北標準時間
+----------------------------------------------------------
+1/9 Testing: config_test
+1/9 Test: config_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/config_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"config_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+config_test: ok
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"config_test" end time: Sep 05 15:47 台北標準時間
+"config_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/9 Testing: button_test
+2/9 Test: button_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/button_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"button_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+button_test: ok
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"button_test" end time: Sep 05 15:47 台北標準時間
+"button_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/9 Testing: mpr121_test
+3/9 Test: mpr121_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/mpr121_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"mpr121_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+mpr121_test: ok
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"mpr121_test" end time: Sep 05 15:47 台北標準時間
+"mpr121_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/9 Testing: touch_logic_test
+4/9 Test: touch_logic_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/touch_logic_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"touch_logic_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+touch_logic_test: ok
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"touch_logic_test" end time: Sep 05 15:47 台北標準時間
+"touch_logic_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/9 Testing: save_test
+5/9 Test: save_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/save_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"save_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+Load Default
+Save requested.
+
+Program Flash 0 a5a55a5a
+Save requested.
+
+Program Flash 1 a5a55a5a
+Program Flash Verify Failed.
+
+Program Flash 1 a5a55a5a
+save_test: ok
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"save_test" end time: Sep 05 15:47 台北標準時間
+"save_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/9 Testing: cfg_protocol_test
+6/9 Test: cfg_protocol_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/cfg_protocol_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"cfg_protocol_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+@CFG/1 ACK LIVE_ON
+@CFG/1 DATA LIVE 1 0f 200000001 805 100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100 22,23,24,22,23,24,22,23,24,22,23,24,22,23,24,22,23,24,22,23,24,22,23,24,22,23,24,22,23,24,22,23,24,22 15,16,17,15,16,17,15,16,17,15,16,17,15,16,17,15,16,17,15,16,17,15,16,17,15,16,17,15,16,17,15,16,17,15
+@CFG/1 ACK BEGIN
+@CFG/1 ACK SET_TOUCH
+@CFG/1 ACK SET_BUTTON
+@CFG/1 ACK COMMIT
+@CFG/1 ACK BEGIN
+@CFG/1 ACK SET_BUTTON
+@CFG/1 ACK COMMIT
+@CFG/1 ACK BEGIN
+@CFG/1 ACK SET_LEDS
+@CFG/1 ERR FLASH_WRITE
+@CFG/1 ACK ABORT
+@CFG/1 ACK LIVE_ON
+@CFG/1 INPUT firmware=20260905-inputfix1 timer=1 scan_max_us=1000 io4_overflows=0 nkro_overflows=0
+@CFG/1 HEALTH sensor=0 i2c_failures=0 setup_failures=0 recoveries=0 bus_recoveries=0 faults=000 blocked=000 oor=0000 overcurrent=0 configuring=0
+@CFG/1 MPR sensor=0 addr=5a valid=3ff ecr=04 oor=5958 afe=06 filter=07 auto=21 auto1=26 target=25 cdc0=05 cdt0=36 nominal_hz=1
+@CFG/1 HEALTH sensor=1 i2c_failures=0 setup_failures=0 recoveries=0 bus_recoveries=0 faults=000 blocked=000 oor=0000 overcurrent=0 configuring=0
+@CFG/1 MPR sensor=1 addr=5b valid=3ff ecr=05 oor=5859 afe=07 filter=06 auto=20 auto1=27 target=24 cdc0=04 cdt0=37 nominal_hz=3
+@CFG/1 HEALTH sensor=2 i2c_failures=0 setup_failures=0 recoveries=0 bus_recoveries=0 faults=000 blocked=000 oor=0000 overcurrent=0 configuring=0
+@CFG/1 MPR sensor=2 addr=5c valid=3ff ecr=02 oor=5f5e afe=00 filter=01 auto=27 auto1=20 target=23 cdc0=03 cdt0=30 nominal_hz=125
+@CFG/1 HEALTH sensor=3 i2c_failures=0 setup_failures=0 recoveries=0 bus_recoveries=0 faults=000 blocked=000 oor=0000 overcurrent=0 configuring=0
+@CFG/1 MPR sensor=3 addr=5d valid=3ff ecr=03 oor=5e5f afe=01 filter=00 auto=26 auto1=21 target=22 cdc0=02 cdt0=31 nominal_hz=250
+@CFG/1 FRAME valid=1 format=filtered:baseline:delta 700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100,700:800:100
+cfg_protocol_test: ok
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"cfg_protocol_test" end time: Sep 05 15:47 台北標準時間
+"cfg_protocol_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/9 Testing: hid_test
+7/9 Test: hid_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/hid_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"hid_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+hid_test: ok
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"hid_test" end time: Sep 05 15:47 台北標準時間
+"hid_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/9 Testing: touch_test
+8/9 Test: touch_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/touch_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"touch_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+touch_test: ok
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"touch_test" end time: Sep 05 15:47 台北標準時間
+"touch_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/9 Testing: io_test
+9/9 Test: io_test
+Command: "C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit/io_test.exe"
+Directory: C:/Users/samuel/AppData/Local/Temp/mai-pico-input-audit
+"io_test" start time: Sep 05 15:47 台北標準時間
+Output:
+----------------------------------------------------------
+io_test: ok
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"io_test" end time: Sep 05 15:47 台北標準時間
+"io_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Sep 05 15:47 台北標準時間

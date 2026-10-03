@@ -22,6 +22,7 @@ void save_init(uint32_t magic, mutex_t *lock);
 void save_loop();
 
 void *save_alloc(size_t size, void *def, void (*after_load)());
-void save_request(bool immediately);
+/* Returns true when an immediate request was written and verified. */
+bool save_request(bool immediately);
 
 #endif

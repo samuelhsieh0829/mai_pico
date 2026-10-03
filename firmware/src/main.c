@@ -35,6 +35,7 @@
 #include "config.h"
 #include "cli.h"
 #include "commands.h"
+#include "cfg_protocol.h"
 #include "io.h"
 #include "hid.h"
 
@@ -132,22 +133,32 @@ static void runtime_ctrl()
     last_coin_button = coin_button;
 }
 
+static bool button_timer_running;
+
 static void main_frame()
 {
     static uint64_t next_frame = 0;
 
+    uint64_t now = time_us_64();
+    if (!next_frame || now > next_frame + 1000) next_frame = now;
     sleep_until(next_frame);
     next_frame += 1000;
 
     tud_task();
-    io_update();
+    if (!cfg_is_active()) {
+        io_update();
+    }
 
     cli_run();
 
-    touch_update();
-    button_update();
+    if (!cfg_is_active()) {
+        if (!button_timer_running) button_update();
+        touch_update();
+    }
 
     hid_update();
+    io_flush_touch();
+    cfg_update();
 
     cli_fps_count(0);
 }
@@ -157,9 +168,13 @@ static void core0_loop()
     while(1) {
         main_frame();
 
-        aime_run();
+        if (!cfg_is_active()) {
+            aime_run();
+        }
         save_loop();
-        runtime_ctrl();
+        if (!cfg_is_active()) {
+            runtime_ctrl();
+        }
     }
 }
 
@@ -197,6 +212,7 @@ void init()
     commands_init();
 
     mai_runtime.key_stuck = button_is_stuck();
+    button_timer_running = button_start_scanning();
 }
 
 int main(void)
@@ -205,6 +221,19 @@ int main(void)
     multicore_launch_core1(core1_loop);
     core0_loop();
     return 0;
+}
+
+/* Lifecycle callbacks also catch disconnect/reconnect within one tud_task(). */
+void tud_mount_cb(void)
+{
+    hid_usb_reset();
+    io_usb_reset();
+}
+
+void tud_umount_cb(void)
+{
+    hid_usb_reset();
+    io_usb_reset();
 }
 
 // Invoked when received GET_REPORT control request
